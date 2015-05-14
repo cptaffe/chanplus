@@ -9,6 +9,7 @@
 #include <queue>
 #include <atomic>
 #include <iostream>
+#include <memory>
 
 namespace channel {
 
@@ -20,6 +21,8 @@ public:
 	class Sender {
 	public:
 		Sender(Channel<t>& m) : mesg(m) {}
+		Sender(const Sender&) = delete;
+		Sender(Sender&&) = delete;
 		~Sender() {
 			mesg.DeadSender();
 		}
@@ -34,6 +37,8 @@ public:
 	class Reciever {
 	public:
 		Reciever(Channel<t>& m) : mesg(m) {}
+		Reciever(const Reciever&) = delete;
+		Reciever(Reciever&&) = delete;
 		~Reciever() {}
 
 		bool Recieve(t& item) {
@@ -43,15 +48,19 @@ public:
 		Channel<t>& mesg;
 	};
 
-	Reciever CreateReciever() {
-		Reciever r(*this);
+	std::shared_ptr<Reciever> CreateReciever() {
+		std::shared_ptr<Reciever> r(new Reciever(*this));
 		return r;
 	}
 
-	Sender CreateSender() {
+	std::shared_ptr<Sender> CreateSender() {
 		senders++;
-		Sender s(*this);
+		std::shared_ptr<Sender> s(new Sender(*this));
 		return s;
+	}
+
+	void Clear() {
+		chan.Reset();
 	}
 private:
 
@@ -62,46 +71,54 @@ private:
 		bool Get(t *item) {
 			// aquire mutex & wait for empty.
 			std::unique_lock<std::mutex> lock(mut);
-			while (count_ == 0 && alive_) {
-				nempty.wait(lock);
-			}
-
-			if (!alive_ && queue.empty()) {
-				return false;
+			while (queue.empty()) {
+				if (!alive_) {
+					return false;
+				} else {
+					std::cout << "WAITING" << std::endl;
+					nempty.wait(lock);
+				}
 			}
 
 			*item = queue.front();
 			queue.pop();
-			--count_;
 
-			nfull.notify_one();
 			lock.unlock();
+			nfull.notify_one();
 			return true;
 		}
 
 		void Put(const t& item) {
 			// aquire mutex & wait for empty.
 			std::unique_lock<std::mutex> lock(mut);
-			while (count_ == max_count && alive_) {
-				nfull.wait(lock);
-			}
-
-			if (!alive_) {
-				return;
+			while (queue.size() == max_count) {
+				if (!alive_) {
+					return;
+				} else {
+					nfull.wait(lock);
+				}
 			}
 
 			queue.push(item);
 
-			++count_;
-			nempty.notify_one();
 			lock.unlock();
+			nempty.notify_one();
 		}
 
 		void Kill() {
-			alive_ = false;
 			// wake up all waiting because death.
+			alive_ = false;
 			nfull.notify_all();
 			nempty.notify_all();
+		}
+
+		void Reset() {
+			std::unique_lock<std::mutex> lock(mut);
+			while (!queue.empty()) {
+				queue.pop();
+			}
+			alive_ = true;
+			lock.unlock();
 		}
 
 		bool alive() const {
@@ -116,7 +133,6 @@ private:
 
 		// atomic access full/empty
 		const int max_count;
-		std::atomic<int> count_ = {0};
 
 		std::condition_variable nfull;
 		std::condition_variable nempty;
@@ -124,13 +140,13 @@ private:
 
 	void DeadSender() {
 		senders--;
-		if (senders <= 0 && chan.alive()) {
+		if (senders == 0 && chan.alive()) {
 			chan.Kill(); // no more senders.
 		}
 	}
 
 	BaseChannel chan;
-	std::atomic<int> senders;
+	std::atomic<int> senders = {0};
 };
 
 } // namespace channel

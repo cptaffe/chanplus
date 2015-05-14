@@ -1,21 +1,23 @@
 
-
 #include "channel.h"
+
 #include <iostream>
 #include <future>
 
 using namespace channel;
 
-void SendFiveNumbers(Channel<int>::Sender s) {
+void SendFiveNumbers(Channel<int> *chan) {
+	auto s = chan->CreateSender();
 	for (int i = 0; i < 5; i++) {
-		s.Send(i);
+		s->Send(i);
 	}
 	// only sender is destroyed, so channel is killed.
 }
 
-void RecieveUntilEmpty(Channel<int>::Reciever r) {
+void RecieveUntilEmpty(Channel<int> *chan) {
+	auto r = chan->CreateReciever();
 	int i;
-	while (r.Recieve(i)) {
+	while (r->Recieve(i)) {
 		std::cout << "recieved: " << i << std::endl;
 	}
 	// reciever is destroyed.
@@ -23,13 +25,7 @@ void RecieveUntilEmpty(Channel<int>::Reciever r) {
 
 int main() {
 	Channel<int> chan;
-
-	// create a sender and a reciever.
-	auto sender = chan.CreateSender();
-	auto reciever = chan.CreateReciever();
-
-	auto st = std::async(SendFiveNumbers, sender);
-	auto rt = std::async(RecieveUntilEmpty, reciever);
+	auto st = std::async(SendFiveNumbers, &chan);
+	auto rt = std::async(RecieveUntilEmpty, &chan);
 	rt.wait();
-	st.wait();
 }
