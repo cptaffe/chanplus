@@ -63,7 +63,7 @@ private:
 			// aquire mutex & wait for empty.
 			std::unique_lock<std::mutex> lock(mut);
 			while (count_ == 0 && alive_) {
-				empty.wait(lock);
+				nempty.wait(lock);
 			}
 
 			if (!alive_ && queue.empty()) {
@@ -74,8 +74,8 @@ private:
 			queue.pop();
 			--count_;
 
+			nfull.notify_one();
 			lock.unlock();
-			full.notify_one();
 			return true;
 		}
 
@@ -83,7 +83,7 @@ private:
 			// aquire mutex & wait for empty.
 			std::unique_lock<std::mutex> lock(mut);
 			while (count_ == max_count && alive_) {
-				full.wait(lock);
+				nfull.wait(lock);
 			}
 
 			if (!alive_) {
@@ -93,15 +93,15 @@ private:
 			queue.push(item);
 
 			++count_;
+			nempty.notify_one();
 			lock.unlock();
-			empty.notify_one();
 		}
 
 		void Kill() {
 			alive_ = false;
 			// wake up all waiting because death.
-			full.notify_all();
-			empty.notify_all();
+			nfull.notify_all();
+			nempty.notify_all();
 		}
 
 		bool alive() const {
@@ -118,13 +118,13 @@ private:
 		const int max_count;
 		std::atomic<int> count_ = {0};
 
-		std::condition_variable full;
-		std::condition_variable empty;
+		std::condition_variable nfull;
+		std::condition_variable nempty;
 	};
 
 	void DeadSender() {
 		senders--;
-		if (senders == 0 && chan.alive()) {
+		if (senders <= 0 && chan.alive()) {
 			chan.Kill(); // no more senders.
 		}
 	}

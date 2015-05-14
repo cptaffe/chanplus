@@ -31,4 +31,5 @@ int main() {
 	auto st = std::async(SendFiveNumbers, sender);
 	auto rt = std::async(RecieveUntilEmpty, reciever);
 	rt.wait();
+	st.wait();
 }
