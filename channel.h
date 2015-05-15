@@ -16,7 +16,7 @@ namespace channel {
 template <typename t>
 class Channel {
 public:
-	Channel(int max = 10) : senders(0), chan(max) {}
+	Channel(int max = 0x10) : senders(0), chan(max) {}
 
 	class Sender {
 	public:
